@@ -34,3 +34,4 @@ If behind, cut in this order: fewer models, skip Day 16, merge faults 3 & 5, Mar
 ## Progress
 - [x] Day 1 - server.py + client.py starter files work
 - [x] Day 2 - test_server/server.py (get_weather, search_notes, send_email) + try_it.py work
+- [x] Day 3 - agentchaos/proxy.py forwards tools/calls unchanged; agentchaos/check_proxy.py passes
