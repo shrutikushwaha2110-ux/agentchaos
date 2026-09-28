@@ -36,3 +36,4 @@ If behind, cut in this order: fewer models, skip Day 16, merge faults 3 & 5, Mar
 - [x] Day 2 - test_server/server.py (get_weather, search_notes, send_email) + try_it.py work
 - [x] Day 3 - agentchaos/proxy.py forwards tools/calls unchanged; agentchaos/check_proxy.py passes
 - [x] Day 4 - agentchaos/faults.py (error + timeout/latency); agentchaos/check_faults.py confirms ~50% failure and seed reproducibility
+- [x] Day 5 - agentchaos/faults.py adds malformed data + rate limit (all 5 faults done); package fixed to agentchaos.* imports; per-call deterministic rolls; check_faults.py covers all 5 faults incl. order independence

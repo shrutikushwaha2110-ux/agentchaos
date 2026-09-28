@@ -1,14 +1,14 @@
 """A pass-through MCP proxy, with optional fault injection.
 
-Usage:
-    python agentchaos/proxy.py -- python test_server/server.py
-    python agentchaos/proxy.py --error-rate 0.3 --seed 1 -- python test_server/server.py
+Usage (run from the project root, so the agentchaos package is importable):
+    python -m agentchaos.proxy -- python test_server/server.py
+    python -m agentchaos.proxy --error-rate 0.3 --seed 1 -- python test_server/server.py
 
 Everything before "--" is proxy options (see faults.FaultConfig for what each
 one does); everything after "--" is the upstream command to launch. The proxy
 starts that upstream server, then acts as an MCP server itself: the agent
 talks to the proxy, and the proxy forwards to upstream - unless a fault
-fires first.
+fires first, or corrupts the result afterwards.
 
 IMPORTANT: stdout is the wire to the agent. Never print() here - log to stderr.
 """
@@ -22,7 +22,7 @@ from mcp.client.stdio import stdio_client
 from mcp.server.lowlevel import Server
 from mcp.server.stdio import stdio_server
 
-from faults import FaultConfig, FaultInjector
+from agentchaos.faults import FaultConfig, FaultInjector
 
 logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="[%(name)s] %(message)s")
 log = logging.getLogger("proxy")
@@ -32,8 +32,9 @@ def parse_args(argv: list[str]) -> tuple[FaultConfig, str, list[str]]:
     """Split argv on '--' into (proxy options, upstream command, upstream args)."""
     if "--" not in argv or argv.index("--") == len(argv) - 1:
         sys.exit(
-            "usage: python agentchaos/proxy.py [--error-rate R] [--timeout-rate R] "
-            "[--latency-ms N] [--seed N] -- <upstream command> [args...]"
+            "usage: python -m agentchaos.proxy [--error-rate R] [--timeout-rate R] "
+            "[--timeout-seconds N] [--latency-ms N] [--malformed-rate R] "
+            "[--ratelimit-rate R] [--seed N] -- <upstream command> [args...]"
         )
     sep = argv.index("--")
     proxy_argv, upstream_argv = argv[:sep], argv[sep + 1:]
@@ -41,13 +42,19 @@ def parse_args(argv: list[str]) -> tuple[FaultConfig, str, list[str]]:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--error-rate", type=float, default=0.0)
     parser.add_argument("--timeout-rate", type=float, default=0.0)
+    parser.add_argument("--timeout-seconds", type=float, default=30.0)
     parser.add_argument("--latency-ms", type=int, default=0)
+    parser.add_argument("--malformed-rate", type=float, default=0.0)
+    parser.add_argument("--ratelimit-rate", type=float, default=0.0)
     parser.add_argument("--seed", type=int, default=0)
     opts = parser.parse_args(proxy_argv)
     config = FaultConfig(
         error_rate=opts.error_rate,
         timeout_rate=opts.timeout_rate,
+        timeout_seconds=opts.timeout_seconds,
         latency_ms=opts.latency_ms,
+        malformed_rate=opts.malformed_rate,
+        ratelimit_rate=opts.ratelimit_rate,
         seed=opts.seed,
     )
 
@@ -88,12 +95,14 @@ async def main() -> None:
             # the proxy forwards them unchanged and passes back whatever it says.
             @server.call_tool(validate_input=False)
             async def call_tool(name: str, arguments: dict) -> types.CallToolResult:
-                fault_result = await injector.maybe_inject(name)
+                fault_result, call_index = await injector.before_call(name)
                 if fault_result is not None:
                     return fault_result
                 log.info("forwarding call: %s %s", name, arguments)
-                # Returning the whole CallToolResult keeps isError and all content.
-                return await upstream.call_tool(name, arguments)
+                result = await upstream.call_tool(name, arguments)
+                # Returning the whole CallToolResult keeps isError and all content;
+                # after_call() may still swap it for a corrupted "success".
+                return injector.after_call(name, call_index, result)
 
             async with stdio_server() as (read, write):
                 await server.run(read, write, server.create_initialization_options())

@@ -1,7 +1,7 @@
 """Check that the proxy is transparent: every call gives the same result
 directly and through the proxy.
 
-Run from the project root:  python agentchaos/check_proxy.py
+Run from the project root:  python -m agentchaos.check_proxy
 """
 import asyncio
 import sys
@@ -13,7 +13,6 @@ from mcp.client.stdio import stdio_client
 
 ROOT = Path(__file__).parent.parent
 SERVER = str(ROOT / "test_server" / "server.py")
-PROXY = str(ROOT / "agentchaos" / "proxy.py")
 
 CALLS = [
     ("get_weather", {"city": "Delhi"}),
@@ -24,8 +23,10 @@ CALLS = [
 
 
 @asynccontextmanager
-async def connect(args: list[str]):
-    params = StdioServerParameters(command=sys.executable, args=args)
+async def connect(args: list[str], cwd: str | None = None):
+    # cwd matters for the proxy: it's launched as `python -m agentchaos.proxy`,
+    # and that only resolves if the process starts in the project root.
+    params = StdioServerParameters(command=sys.executable, args=args, cwd=cwd)
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
@@ -42,7 +43,8 @@ async def collect(session: ClientSession):
 async def main() -> int:
     async with connect([SERVER]) as direct:
         direct_tools, direct_results = await collect(direct)
-    async with connect([PROXY, "--", sys.executable, SERVER]) as proxied:
+    proxy_args = ["-m", "agentchaos.proxy", "--", sys.executable, SERVER]
+    async with connect(proxy_args, cwd=str(ROOT)) as proxied:
         proxy_tools, proxy_results = await collect(proxied)
 
     failures = 0
