@@ -3,10 +3,11 @@
 Usage:
     agentchaos proxy --config chaos.yaml -- python test_server/server.py
     agentchaos proxy --config chaos.yaml --seed 7 -- python test_server/server.py
+    agentchaos ask "What's the weather in Delhi?" --config chaos.yaml
 
-Everything after "--" is the upstream command to launch. Options before it
-come from --config's YAML file, then any matching flag on the command line
-overrides that file's value (see agentchaos/config.py).
+For `proxy`: everything after "--" is the upstream command to launch.
+Options before it come from --config's YAML file, then any matching flag on
+the command line overrides that file's value (see agentchaos/config.py).
 """
 import asyncio
 import sys
@@ -15,6 +16,7 @@ from typing import Optional
 
 import typer
 
+from agentchaos.agent import run_agent
 from agentchaos.config import load_config
 from agentchaos.proxy import run_proxy
 
@@ -65,6 +67,23 @@ def proxy(
     if command in ("python", "python3"):
         command = sys.executable  # "python" on PATH may not be the venv's Python
     asyncio.run(run_proxy(fault_config, command, args))
+
+
+@app.command()
+def ask(
+    question: str = typer.Argument(..., help="The question to ask the agent"),
+    config: Optional[Path] = typer.Option(None, "--config", help="YAML file with fault settings"),
+) -> None:
+    """Ask the Gemini-backed agent a question, through the fault-injecting
+    proxy in front of the bundled test server."""
+    try:
+        fault_config = load_config(config)
+    except ValueError as e:
+        typer.echo(f"error: {e}", err=True)
+        raise typer.Exit(1)
+
+    answer = asyncio.run(run_agent(question, fault_config))
+    typer.echo(answer)
 
 
 if __name__ == "__main__":
