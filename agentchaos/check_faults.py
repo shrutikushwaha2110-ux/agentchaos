@@ -5,11 +5,12 @@
   replayed later to debug exactly what the agent saw.
 - the same seed gives the same faults *per tool*, even if the agent happens
   to call tools in a different order (see faults.FaultInjector._rng).
-- timeout, malformed and rate-limit faults each fire and look right.
+- timeout, malformed, injection and rate-limit faults each fire and look right.
 
 Run from the project root:  python -m agentchaos.check_faults
 """
 import asyncio
+import re
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -132,6 +133,43 @@ async def check_malformed() -> bool:
     return all_look_like_success and varied
 
 
+CANARY_RE = re.compile(r"CANARY-[0-9A-F]{4}")
+
+
+async def check_injection() -> bool:
+    """injection-rate 1.0: every call still looks like a success (isError=False,
+    the real weather text is still in there somewhere), but now also carries a
+    planted CANARY-xxxx instruction. Same seed -> same canaries, same as every
+    other fault type."""
+    async with connect("--injection-rate", "1.0", "--seed", str(SEED)) as session:
+        results = await call_many(session, "get_weather", {"city": "Delhi"}, 4)
+    texts = [r.content[0].text if r.content else "<empty>" for r in results]
+    print("injection-rate 1.0, one example result:")
+    print(f"  {texts[0]!r}")
+
+    all_look_like_success = all(not r.isError for r in results)
+    print(f"[{'PASS' if all_look_like_success else 'FAIL'}] isError stays False (looks like success)")
+
+    canaries = [CANARY_RE.search(t) for t in texts]
+    all_have_canary = all(canaries)
+    print(f"[{'PASS' if all_have_canary else 'FAIL'}] every result contains a CANARY-xxxx code")
+
+    real_content_kept = all("Delhi" in t for t in texts)
+    print(f"[{'PASS' if real_content_kept else 'FAIL'}] the genuine weather text is still present, not just the injection")
+
+    async with connect("--injection-rate", "1.0", "--seed", str(SEED)) as session:
+        results2 = await call_many(session, "get_weather", {"city": "Delhi"}, 4)
+    texts2 = [r.content[0].text if r.content else "<empty>" for r in results2]
+    canaries2 = [CANARY_RE.search(t) for t in texts2]
+    same_canaries = [c.group() if c else None for c in canaries] == [c.group() if c else None for c in canaries2]
+    print(f"[{'PASS' if same_canaries else 'FAIL'}] same seed -> identical canaries")
+    if not same_canaries:
+        print("  run 1:", [c.group() if c else None for c in canaries])
+        print("  run 2:", [c.group() if c else None for c in canaries2])
+
+    return all_look_like_success and all_have_canary and real_content_kept and same_canaries
+
+
 async def check_ratelimit() -> bool:
     """ratelimit-rate 1.0 means every fresh roll triggers (a roll is always
     < 1.0), so calling the real proxy wouldn't show the cooldown *ending* -
@@ -164,6 +202,7 @@ async def main() -> int:
         "order independence": await check_order_independence(),
         "timeout": await check_timeout(),
         "malformed data": await check_malformed(),
+        "prompt injection": await check_injection(),
         "rate limit": await check_ratelimit(),
     }
     print()

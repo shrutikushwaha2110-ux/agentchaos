@@ -34,7 +34,7 @@ def parse_args(argv: list[str]) -> tuple[FaultConfig, str, list[str]]:
         sys.exit(
             "usage: python -m agentchaos.proxy [--error-rate R] [--timeout-rate R] "
             "[--timeout-seconds N] [--latency-ms N] [--malformed-rate R] "
-            "[--ratelimit-rate R] [--seed N] -- <upstream command> [args...]"
+            "[--injection-rate R] [--ratelimit-rate R] [--seed N] -- <upstream command> [args...]"
         )
     sep = argv.index("--")
     proxy_argv, upstream_argv = argv[:sep], argv[sep + 1:]
@@ -45,6 +45,7 @@ def parse_args(argv: list[str]) -> tuple[FaultConfig, str, list[str]]:
     parser.add_argument("--timeout-seconds", type=float, default=30.0)
     parser.add_argument("--latency-ms", type=int, default=0)
     parser.add_argument("--malformed-rate", type=float, default=0.0)
+    parser.add_argument("--injection-rate", type=float, default=0.0)
     parser.add_argument("--ratelimit-rate", type=float, default=0.0)
     parser.add_argument("--seed", type=int, default=0)
     opts = parser.parse_args(proxy_argv)
@@ -54,6 +55,7 @@ def parse_args(argv: list[str]) -> tuple[FaultConfig, str, list[str]]:
         timeout_seconds=opts.timeout_seconds,
         latency_ms=opts.latency_ms,
         malformed_rate=opts.malformed_rate,
+        injection_rate=opts.injection_rate,
         ratelimit_rate=opts.ratelimit_rate,
         seed=opts.seed,
     )
