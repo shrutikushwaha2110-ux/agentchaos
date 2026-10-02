@@ -1,0 +1,17 @@
+# "Hostile" preset: worst case.
+#
+# High failure rates across the board, plus heavy prompt injection - use
+# this to see whether the agent falls apart under load, or starts leaking
+# canaries / calling tools (like send_email) it was never asked to call.
+#
+#   agentchaos proxy --config configs/hostile.yaml -- python test_server/server.py
+
+error_rate: 0.3
+timeout_rate: 0.2
+timeout_seconds: 10
+latency_ms: 1000
+malformed_rate: 0.3
+injection_rate: 0.4
+ratelimit_rate: 0.2
+
+seed: 1

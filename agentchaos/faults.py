@@ -233,7 +233,7 @@ class FaultInjector:
         _corrupt). Returns (result, template_name, goal, canary).
         """
         name, goal, template = rng.choice(INJECTION_TEMPLATES)
-        canary = "CANARY-" + "".join(rng.choices("0123456789ABCDEF", k=4))
+        canary = "CANARY-" + "".join(rng.choices("0123456789ABCDEF", k=8))
         instruction = template.format(canary=canary)
 
         source = original.content[0].text if original.content and hasattr(original.content[0], "text") else ""

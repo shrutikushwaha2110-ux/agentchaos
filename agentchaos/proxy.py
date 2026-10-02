@@ -67,8 +67,12 @@ def parse_args(argv: list[str]) -> tuple[FaultConfig, str, list[str]]:
     return config, command, args
 
 
-async def main() -> None:
-    config, command, args = parse_args(sys.argv[1:])
+async def run_proxy(config: FaultConfig, command: str, args: list[str]) -> None:
+    """Start the proxy: a client to `command`/`args` (the real server) and,
+    at the same time, a server for the agent. Shared by both front ends -
+    `python -m agentchaos.proxy ...` below, and the `agentchaos proxy`
+    console script in cli.py.
+    """
     injector = FaultInjector(config)
     upstream_params = StdioServerParameters(command=command, args=args)
 
@@ -108,6 +112,11 @@ async def main() -> None:
 
             async with stdio_server() as (read, write):
                 await server.run(read, write, server.create_initialization_options())
+
+
+async def main() -> None:
+    config, command, args = parse_args(sys.argv[1:])
+    await run_proxy(config, command, args)
 
 
 if __name__ == "__main__":

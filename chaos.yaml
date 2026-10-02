@@ -1,0 +1,21 @@
+# Default fault-injection settings for the AgentChaos proxy.
+#
+# Use it like this:
+#   agentchaos proxy --config chaos.yaml -- python test_server/server.py
+#
+# Any flag passed on the command line overrides the matching value here,
+# e.g. `--seed 7` keeps everything else but changes just the seed.
+#
+# Each *_rate below is a probability between 0 and 1 that a given tool call
+# is affected by that fault. See agentchaos/faults.py for what each fault
+# actually does to the call.
+
+error_rate: 0.1       # fake upstream error - upstream is never called
+timeout_rate: 0.1     # fake timeout after waiting timeout_seconds - upstream is never called
+timeout_seconds: 5    # how long a simulated timeout claims to have waited
+latency_ms: 300       # max random delay (ms) added to an otherwise normal call
+malformed_rate: 0.1   # real call, but the successful result is corrupted
+injection_rate: 0.1   # real call, but a planted instruction + CANARY-xxxxxxxx is added
+ratelimit_rate: 0.05  # real 429, followed by a short cooldown on the same tool
+
+seed: 42              # change this for a different run; same seed -> same faults

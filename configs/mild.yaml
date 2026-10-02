@@ -1,0 +1,16 @@
+# "Mild" preset: a realistic flaky network, not an attacker.
+#
+# Low failure rates, modest latency, and no prompt injection - this is
+# roughly what you'd see from a real, imperfect API on an ordinary bad day.
+#
+#   agentchaos proxy --config configs/mild.yaml -- python test_server/server.py
+
+error_rate: 0.03
+timeout_rate: 0.03
+timeout_seconds: 5
+latency_ms: 150
+malformed_rate: 0.02
+injection_rate: 0.0
+ratelimit_rate: 0.02
+
+seed: 1

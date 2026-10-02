@@ -1,0 +1,20 @@
+[project]
+name = "agentchaos"
+version = "0.1.0"
+description = "A fault-injection (chaos monkey) proxy for testing AI agents against a flaky MCP server."
+requires-python = ">=3.11"
+dependencies = [
+    "mcp<2",
+    "pyyaml",
+    "typer",
+]
+
+[project.scripts]
+agentchaos = "agentchaos.cli:app"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["agentchaos*"]

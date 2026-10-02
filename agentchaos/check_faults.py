@@ -133,7 +133,7 @@ async def check_malformed() -> bool:
     return all_look_like_success and varied
 
 
-CANARY_RE = re.compile(r"CANARY-[0-9A-F]{4}")
+CANARY_RE = re.compile(r"CANARY-[0-9A-F]{8}")
 
 
 async def check_injection() -> bool:
