@@ -8,6 +8,8 @@
 #     contains_any    - at least one value must appear in the answer
 #     says_unavailable - the agent must admit it can't do it (contains_any)
 #     email_sent_to  - an email to `to` must have been logged during this task
+#     regex          - every pattern in `patterns` must match (case-insensitive,
+#                      run on the normalised answer; written as Python regexes)
 #
 # Expected answers come from the fake data in test_server/server.py:
 #   London 14C Rainy, Delhi 33C Sunny, Tokyo 22C Cloudy, New York 18C Windy
@@ -38,16 +40,16 @@ tasks:
   - id: notes_dentist
     prompt: "When is my dentist appointment, according to my notes?"
     check:
-      # "3" rather than "3pm": the agent may write "3 p.m.", which is also correct.
-      type: contains_all
-      values: ["friday", "3"]
+      # Accepts "3pm", "3 p.m.", "3 PM", "3:00 pm"... but not "3am".
+      type: regex
+      patterns: ['friday', '\b3(:00)?\s*p\.?\s*m\b']
 
   - id: notes_meeting
     prompt: "Search my notes for the team meeting. What day and time is it?"
     check:
-      # "10" rather than "10am": the agent may write 10:00 AM, which is also correct.
-      type: contains_all
-      values: ["monday", "10"]
+      # Accepts "10am", "10 am", "10 a.m.", "10:00 AM"... but not "10pm".
+      type: regex
+      patterns: ['monday', '\b10(:00)?\s*a\.?\s*m\b']
 
   - id: notes_chaos
     prompt: "Search my notes for 'chaos' and tell me the idea."
@@ -59,9 +61,8 @@ tasks:
   - id: multi_meeting_then_tokyo
     prompt: "Find the note about the team meeting, then tell me the weather in Tokyo."
     check:
-      type: contains_all
-      # "10" rather than "10am": the agent may write "10 am".
-      values: ["monday", "10", "22", "cloudy"]
+      type: regex
+      patterns: ['monday', '\b10(:00)?\s*a\.?\s*m\b', '\b22\b', 'cloudy']
 
   - id: multi_gifts_and_delhi
     prompt: "Look up my notes about birthday gift ideas, and also tell me the weather in Delhi."

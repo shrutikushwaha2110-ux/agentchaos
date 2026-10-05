@@ -35,6 +35,7 @@ from mcp import ClientSession, StdioServerParameters, types as mcp_types
 from mcp.client.stdio import stdio_client
 from openai import AsyncOpenAI
 
+from agentchaos.events import EventTarget
 from agentchaos.faults import FaultConfig
 
 load_dotenv()
@@ -92,12 +93,13 @@ def parse_model(spec: str) -> tuple[str, str]:
     return provider, model
 
 
-def _proxy_args(config: FaultConfig) -> list[str]:
+def _proxy_args(config: FaultConfig, events: EventTarget | None = None) -> list[str]:
     """Translate a FaultConfig into the flags agentchaos.proxy's argparse
     front end understands (see proxy.parse_args), launching it in front of
-    the bundled test server.
+    the bundled test server. With `events`, the proxy also writes its fault
+    events to that run log.
     """
-    return [
+    args = [
         "-m", "agentchaos.proxy",
         "--error-rate", str(config.error_rate),
         "--timeout-rate", str(config.timeout_rate),
@@ -107,8 +109,10 @@ def _proxy_args(config: FaultConfig) -> list[str]:
         "--injection-rate", str(config.injection_rate),
         "--ratelimit-rate", str(config.ratelimit_rate),
         "--seed", str(config.seed),
-        "--", sys.executable, TEST_SERVER,
     ]
+    if events is not None:
+        args += ["--events-file", str(events.path), "--task-id", events.task_id, "--mode", events.mode]
+    return args + ["--", sys.executable, TEST_SERVER]
 
 
 def _to_gemini_declaration(tool: mcp_types.Tool) -> genai_types.FunctionDeclaration:
@@ -258,7 +262,7 @@ async def _run_groq(session, mcp_tools, model, question, api_key, result, log) -
 
 
 async def run_agent(question: str, config: FaultConfig, model: str = DEFAULT_MODEL,
-                    verbose: bool = True) -> AgentResult:
+                    verbose: bool = True, events: EventTarget | None = None) -> AgentResult:
     """Run the agent loop and return an AgentResult with the final answer,
     every tool call made (args, result, error flag) and the steps used.
 
@@ -280,7 +284,7 @@ async def run_agent(question: str, config: FaultConfig, model: str = DEFAULT_MOD
     if not api_key:
         sys.exit(f"error: {key_var} is not set. Copy .env.example to .env and fill it in.")
 
-    params = StdioServerParameters(command=sys.executable, args=_proxy_args(config), cwd=str(ROOT))
+    params = StdioServerParameters(command=sys.executable, args=_proxy_args(config, events), cwd=str(ROOT))
     result = AgentResult(final_answer="")
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:

@@ -20,6 +20,7 @@ import typer
 from agentchaos.agent import DEFAULT_MODEL, parse_model, run_agent
 from agentchaos.config import load_config
 from agentchaos.proxy import run_proxy
+from agentchaos.runner import new_run_dir, run_suite, summarise
 from agentchaos.tasks import TASKS_FILE, format_table, load_tasks, run_tasks
 
 app = typer.Typer(add_completion=False, help="AgentChaos: fault injection for AI agents.")
@@ -107,6 +108,34 @@ def tasks(
 
     results = asyncio.run(run_tasks(suite, fault_config, model=model))
     typer.echo(format_table(results))
+
+
+@app.command()
+def run(
+    config: Path = typer.Option(..., "--config", help="YAML fault config for the chaos runs"),
+    model: str = typer.Option(DEFAULT_MODEL, "--model", help="provider/model, e.g. groq/openai/gpt-oss-120b"),
+    tasks_file: Path = typer.Option(TASKS_FILE, "--tasks", help="YAML file with the task suite"),
+) -> None:
+    """Run each task twice - once with no faults (baseline), once with the
+    config's faults (chaos) - and log every event to runs/<timestamp>/events.jsonl."""
+    try:
+        fault_config = load_config(config)
+        suite = load_tasks(tasks_file)
+        parse_model(model)
+    except ValueError as e:
+        typer.echo(f"error: {e}", err=True)
+        raise typer.Exit(1)
+
+    run_dir = new_run_dir()
+    typer.echo(f"logging to {run_dir / 'events.jsonl'}")
+
+    def show(record: dict) -> None:
+        verdict = "PASS" if record["passed"] else "FAIL"
+        typer.echo(f"  {record['task_id']:<26} {record['mode']:<9} {verdict}  ({record['duration_s']}s)")
+
+    events_path = asyncio.run(run_suite(suite, fault_config, model, run_dir, on_result=show))
+    typer.echo("")
+    typer.echo(summarise(events_path))
 
 
 if __name__ == "__main__":

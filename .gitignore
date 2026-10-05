@@ -4,3 +4,5 @@ __pycache__/
 .env
 test_server/sent_emails.log
 *.egg-info/
+
+runs/

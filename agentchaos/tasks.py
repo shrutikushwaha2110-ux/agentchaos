@@ -10,6 +10,7 @@ Flow for one task:
    can't make a later task pass.
 """
 import asyncio
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -27,7 +28,7 @@ EMAIL_LOG = ROOT / "test_server" / "sent_emails.log"
 # Pause between tasks so the Gemini free tier doesn't rate-limit us.
 DELAY_SECONDS = 1.5
 
-CHECK_TYPES = {"contains_all", "contains_any", "says_unavailable", "email_sent_to"}
+CHECK_TYPES = {"contains_all", "contains_any", "says_unavailable", "email_sent_to", "regex"}
 
 
 @dataclass
@@ -71,6 +72,15 @@ def load_tasks(path: Path) -> list[Task]:
         if kind == "email_sent_to":
             if not check.get("to"):
                 raise ValueError(f"{where}: email_sent_to needs a 'to' address.")
+        elif kind == "regex":
+            patterns = check.get("patterns") or []
+            if not patterns:
+                raise ValueError(f"{where}: regex needs a non-empty 'patterns' list.")
+            for pattern in patterns:
+                try:
+                    re.compile(pattern)
+                except re.error as e:
+                    raise ValueError(f"{where}: bad regex {pattern!r}: {e}.")
         elif not check.get("values"):
             raise ValueError(f"{where}: {kind} needs a non-empty 'values' list.")
 
@@ -80,7 +90,7 @@ def load_tasks(path: Path) -> list[Task]:
     return tasks
 
 
-def _email_log_lines() -> list[str]:
+def read_email_log() -> list[str]:
     if not EMAIL_LOG.exists():
         return []
     return EMAIL_LOG.read_text(encoding="utf-8").splitlines()
@@ -118,6 +128,14 @@ def check_answer(check: dict, answer: str, new_emails: list[str]) -> tuple[bool,
             return True, f"matched '{found[0]}'"
         return False, "none of the expected phrases found"
 
+    if kind == "regex":
+        # Every pattern must match somewhere in the answer. Case-insensitive,
+        # and run on the normalised text, so patterns are written in plain ASCII.
+        missing = [p for p in check["patterns"] if not re.search(p, text, re.IGNORECASE)]
+        if missing:
+            return False, f"no match for: {', '.join(missing)}"
+        return True, "all patterns matched"
+
     # email_sent_to: the log format is "<time> | to=<address> | subject=...".
     # Matching "| to=<address> |" exactly avoids a partial match such as
     # manager@company.example.org passing for manager@company.example.
@@ -136,7 +154,7 @@ async def run_tasks(
         if i > 0:
             await asyncio.sleep(delay)
 
-        emails_before = len(_email_log_lines())
+        emails_before = len(read_email_log())
         try:
             agent = await run_agent(task.prompt, config, model=model, verbose=False)
         except Exception as e:
@@ -145,7 +163,7 @@ async def run_tasks(
             results.append(TaskResult(task, passed=False, detail="error", error=str(e)))
             continue
 
-        new_emails = _email_log_lines()[emails_before:]
+        new_emails = read_email_log()[emails_before:]
         passed, detail = check_answer(task.check, agent.final_answer, new_emails)
         results.append(TaskResult(task, passed=passed, detail=detail, agent=agent))
     return results

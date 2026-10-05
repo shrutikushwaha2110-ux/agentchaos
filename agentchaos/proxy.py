@@ -16,20 +16,23 @@ import argparse
 import asyncio
 import logging
 import sys
+from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
 from mcp.server.lowlevel import Server
 from mcp.server.stdio import stdio_server
 
+from agentchaos.events import EventTarget, fault_listener
 from agentchaos.faults import FaultConfig, FaultInjector
 
 logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="[%(name)s] %(message)s")
 log = logging.getLogger("proxy")
 
 
-def parse_args(argv: list[str]) -> tuple[FaultConfig, str, list[str]]:
-    """Split argv on '--' into (proxy options, upstream command, upstream args)."""
+def parse_args(argv: list[str]) -> tuple[FaultConfig, str, list[str], EventTarget | None]:
+    """Split argv on '--' into (proxy options, upstream command, upstream args,
+    event target). The event target is None unless --events-file is given."""
     if "--" not in argv or argv.index("--") == len(argv) - 1:
         sys.exit(
             "usage: python -m agentchaos.proxy [--error-rate R] [--timeout-rate R] "
@@ -48,6 +51,11 @@ def parse_args(argv: list[str]) -> tuple[FaultConfig, str, list[str]]:
     parser.add_argument("--injection-rate", type=float, default=0.0)
     parser.add_argument("--ratelimit-rate", type=float, default=0.0)
     parser.add_argument("--seed", type=int, default=0)
+    # Where to write fault events (see events.py). Optional: without it the
+    # proxy only logs faults to stderr, as before.
+    parser.add_argument("--events-file", type=str, default=None)
+    parser.add_argument("--task-id", type=str, default="")
+    parser.add_argument("--mode", type=str, default="")
     opts = parser.parse_args(proxy_argv)
     config = FaultConfig(
         error_rate=opts.error_rate,
@@ -64,16 +72,21 @@ def parse_args(argv: list[str]) -> tuple[FaultConfig, str, list[str]]:
     # "python" on PATH may not be the venv's Python; sys.executable always is.
     if command in ("python", "python3"):
         command = sys.executable
-    return config, command, args
+    events = None
+    if opts.events_file:
+        events = EventTarget(path=Path(opts.events_file), task_id=opts.task_id, mode=opts.mode)
+    return config, command, args, events
 
 
-async def run_proxy(config: FaultConfig, command: str, args: list[str]) -> None:
+async def run_proxy(config: FaultConfig, command: str, args: list[str],
+                    events: EventTarget | None = None) -> None:
     """Start the proxy: a client to `command`/`args` (the real server) and,
     at the same time, a server for the agent. Shared by both front ends -
     `python -m agentchaos.proxy ...` below, and the `agentchaos proxy`
-    console script in cli.py.
+    console script in cli.py. With `events`, each injected fault is also
+    written to that run's event log.
     """
-    injector = FaultInjector(config)
+    injector = FaultInjector(config, on_fault=fault_listener(events, config.seed) if events else None)
     upstream_params = StdioServerParameters(command=command, args=args)
 
     # Step 1: act as a CLIENT of the real server.
@@ -115,8 +128,8 @@ async def run_proxy(config: FaultConfig, command: str, args: list[str]) -> None:
 
 
 async def main() -> None:
-    config, command, args = parse_args(sys.argv[1:])
-    await run_proxy(config, command, args)
+    config, command, args, events = parse_args(sys.argv[1:])
+    await run_proxy(config, command, args, events)
 
 
 if __name__ == "__main__":

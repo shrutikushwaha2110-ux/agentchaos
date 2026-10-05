@@ -27,6 +27,7 @@ import asyncio
 import logging
 import random
 from collections import defaultdict
+from typing import Callable
 from dataclasses import dataclass
 
 from mcp import types
@@ -75,12 +76,21 @@ class FaultInjector:
     - after_call(): given upstream's real result, may corrupt it (malformed).
     """
 
-    def __init__(self, config: FaultConfig):
+    def __init__(self, config: FaultConfig, on_fault: Callable[[dict], None] | None = None):
         self.config = config
         # How many times each tool has been called, and how many more calls
         # to a tool are still under an active rate-limit cooldown.
         self.call_counts: dict[str, int] = defaultdict(int)
         self.ratelimit_remaining: dict[str, int] = defaultdict(int)
+        # Optional listener, called once per fault that fires (the proxy uses
+        # it to write fault events to the run's log). None = report nothing.
+        self.on_fault = on_fault
+
+    def _report(self, fault_type: str, tool_name: str, call_index: int, **details) -> None:
+        """Tell the listener that a fault fired. call_number is 1-based and
+        counts this tool's calls, matching the "call #" in the log lines."""
+        if self.on_fault is not None:
+            self.on_fault({"type": fault_type, "tool": tool_name, "call_number": call_index + 1, **details})
 
     def _rng(self, tool_name: str, call_index: int, kind: str) -> random.Random:
         """A fresh, independent RNG for one (call, fault type) pair.
@@ -120,6 +130,7 @@ class FaultInjector:
                 "FAULT [ratelimit] %s call #%d -> 429 (cooldown, %d more after this)",
                 tool_name, call_index, self.ratelimit_remaining[tool_name],
             )
+            self._report("ratelimit", tool_name, call_index, cooldown=True)
             return self._ratelimit_result(), call_index
 
         if self._rng(tool_name, call_index, "ratelimit").random() < self.config.ratelimit_rate:
@@ -128,10 +139,12 @@ class FaultInjector:
                 "FAULT [ratelimit] %s call #%d -> 429 (triggered, next %d calls also limited)",
                 tool_name, call_index, RATELIMIT_COOLDOWN_CALLS,
             )
+            self._report("ratelimit", tool_name, call_index, cooldown=False)
             return self._ratelimit_result(), call_index
 
         if self._rng(tool_name, call_index, "error").random() < self.config.error_rate:
             log.info("FAULT [error] %s call #%d -> 503 Service Unavailable", tool_name, call_index)
+            self._report("error", tool_name, call_index, status=503)
             return types.CallToolResult(
                 content=[types.TextContent(type="text", text="503 Service Unavailable")],
                 isError=True,
@@ -142,6 +155,7 @@ class FaultInjector:
                 "FAULT [timeout] %s call #%d -> waiting %gs then failing",
                 tool_name, call_index, self.config.timeout_seconds,
             )
+            self._report("timeout", tool_name, call_index, timeout_seconds=self.config.timeout_seconds)
             await asyncio.sleep(self.config.timeout_seconds)
             return types.CallToolResult(
                 content=[types.TextContent(
@@ -153,6 +167,7 @@ class FaultInjector:
         if self.config.latency_ms > 0:
             delay = self._rng(tool_name, call_index, "latency").uniform(0, self.config.latency_ms / 1000)
             log.info("FAULT [latency] %s call #%d -> delaying %.2fs", tool_name, call_index, delay)
+            self._report("latency", tool_name, call_index, delay_seconds=round(delay, 3))
             await asyncio.sleep(delay)
 
         return None, call_index
@@ -169,6 +184,7 @@ class FaultInjector:
         if rng.random() < self.config.malformed_rate:
             corrupted, style = self._corrupt(rng, result)
             log.info("FAULT [malformed] %s call #%d -> %s", tool_name, call_index, style)
+            self._report("malformed", tool_name, call_index, style=style)
             return corrupted
 
         inj_rng = self._rng(tool_name, call_index, "injection")
@@ -178,6 +194,7 @@ class FaultInjector:
                 "FAULT [injection] %s call #%d -> template=%s goal=%s canary=%s",
                 tool_name, call_index, template_name, goal, canary,
             )
+            self._report("injection", tool_name, call_index, template=template_name, goal=goal, canary=canary)
             return injected
 
         return result
