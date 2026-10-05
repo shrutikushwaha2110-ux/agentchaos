@@ -11,6 +11,7 @@ Options before it come from --config's YAML file, then any matching flag on
 the command line overrides that file's value (see agentchaos/config.py).
 """
 import asyncio
+import logging
 import sys
 from pathlib import Path
 from typing import Optional
@@ -21,7 +22,13 @@ from agentchaos.agent import DEFAULT_MODEL, parse_model, run_agent
 from agentchaos.config import load_config
 from agentchaos.proxy import run_proxy
 from agentchaos.runner import new_run_dir, run_suite, summarise
+from agentchaos.scorer import score_folder
 from agentchaos.tasks import TASKS_FILE, format_table, load_tasks, run_tasks
+
+# Model SDKs log every HTTP request at INFO. Keep those out of the terminal;
+# our own [agent] and [proxy] lines and the tables still show.
+for _name in ("httpx", "httpx2", "httpcore", "openai"):
+    logging.getLogger(_name).setLevel(logging.WARNING)
 
 app = typer.Typer(add_completion=False, help="AgentChaos: fault injection for AI agents.")
 
@@ -136,6 +143,20 @@ def run(
     events_path = asyncio.run(run_suite(suite, fault_config, model, run_dir, on_result=show))
     typer.echo("")
     typer.echo(summarise(events_path))
+
+
+@app.command()
+def score(
+    run_dir: Path = typer.Argument(..., help="A run folder, e.g. runs/20261005-185057"),
+) -> None:
+    """Score a finished run from its events.jsonl (no API calls). Prints the
+    score table and writes scores.json next to the events file."""
+    if not (run_dir / "events.jsonl").exists():
+        typer.echo(f"error: no events.jsonl in {run_dir}", err=True)
+        raise typer.Exit(1)
+    _, table = score_folder(run_dir)
+    typer.echo(table)
+    typer.echo(f"\nwrote {run_dir / 'scores.json'}")
 
 
 if __name__ == "__main__":

@@ -50,6 +50,16 @@ def new_run_dir(runs_dir: Path = RUNS_DIR) -> Path:
     return run_dir
 
 
+def describe_error(e: BaseException) -> str:
+    """Return the innermost messages of an error. anyio wraps failures in an
+    ExceptionGroup ("unhandled errors in a TaskGroup"), which hides the real
+    cause, such as a 503 from the model API."""
+    inner = getattr(e, "exceptions", None)
+    if inner:
+        return "; ".join(describe_error(sub) for sub in inner)
+    return f"{type(e).__name__}: {e}"
+
+
 async def run_one(task: Task, mode: str, config: FaultConfig, model: str,
                   events_path: Path, base_seed: int) -> dict:
     """Run one task in one mode and return its "task_result" record. `config`
@@ -72,7 +82,7 @@ async def run_one(task: Task, mode: str, config: FaultConfig, model: str,
             events=EventTarget(path=events_path, task_id=task.id, mode=mode),
         )
     except Exception as e:
-        record.update(passed=False, detail="error", error=str(e), final_answer=None, steps=None, tool_calls=[])
+        record.update(passed=False, detail="error", error=describe_error(e), final_answer=None, steps=None, tool_calls=[])
     else:
         passed, detail = check_answer(task.check, agent.final_answer, read_email_log()[emails_before:])
         record.update(

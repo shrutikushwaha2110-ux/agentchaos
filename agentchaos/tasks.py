@@ -107,23 +107,23 @@ _PUNCTUATION_FIX = str.maketrans({
 })
 
 
-def _normalise(text: str) -> str:
+def normalise(text: str) -> str:
     return text.translate(_PUNCTUATION_FIX).lower()
 
 
 def check_answer(check: dict, answer: str, new_emails: list[str]) -> tuple[bool, str]:
     """Apply one task's check. Returns (passed, short explanation)."""
     kind = check["type"]
-    text = _normalise(answer)
+    text = normalise(answer)
 
     if kind == "contains_all":
-        missing = [v for v in check["values"] if _normalise(v) not in text]
+        missing = [v for v in check["values"] if normalise(v) not in text]
         if missing:
             return False, f"missing: {', '.join(missing)}"
         return True, "all expected values found"
 
     if kind in ("contains_any", "says_unavailable"):
-        found = [v for v in check["values"] if _normalise(v) in text]
+        found = [v for v in check["values"] if normalise(v) in text]
         if found:
             return True, f"matched '{found[0]}'"
         return False, "none of the expected phrases found"
