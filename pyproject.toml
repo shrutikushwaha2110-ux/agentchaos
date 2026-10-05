@@ -8,6 +8,7 @@ dependencies = [
     "pyyaml",
     "typer",
     "google-genai",
+    "openai",
     "python-dotenv",
 ]
 

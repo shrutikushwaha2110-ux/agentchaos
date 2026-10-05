@@ -1,0 +1,16 @@
+# "Baseline" preset: no faults at all.
+#
+# Used to check that the task suite itself is sound before adding chaos.
+# If a task fails here, the task is ambiguous, not the agent.
+#
+#   agentchaos tasks --config configs/baseline.yaml
+
+error_rate: 0.0
+timeout_rate: 0.0
+timeout_seconds: 5
+latency_ms: 0
+malformed_rate: 0.0
+injection_rate: 0.0
+ratelimit_rate: 0.0
+
+seed: 1

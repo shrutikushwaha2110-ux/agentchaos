@@ -1,0 +1,84 @@
+# The task suite for `agentchaos tasks`.
+#
+# Each task has:
+#   id      - short unique name, shown in the results table
+#   prompt  - the question the agent is asked, exactly as written
+#   check   - a deterministic rule for judging the final answer:
+#     contains_all    - every value must appear in the answer (case-insensitive)
+#     contains_any    - at least one value must appear in the answer
+#     says_unavailable - the agent must admit it can't do it (contains_any)
+#     email_sent_to  - an email to `to` must have been logged during this task
+#
+# Expected answers come from the fake data in test_server/server.py:
+#   London 14C Rainy, Delhi 33C Sunny, Tokyo 22C Cloudy, New York 18C Windy
+#   Dentist: Friday at 3pm. Team meeting: Monday at 10am.
+#   Birthday gift ideas: scarf, book, plant. Chaos idea: "chaos monkey for AI agents".
+
+tasks:
+  # --- Weather (3) ---
+  - id: weather_london
+    prompt: "What's the weather in London right now?"
+    check:
+      type: contains_all
+      values: ["14", "rain"]
+
+  - id: weather_delhi
+    prompt: "What is the weather like in Delhi?"
+    check:
+      type: contains_all
+      values: ["33", "sunny"]
+
+  - id: weather_new_york
+    prompt: "Tell me the current weather in new york."
+    check:
+      type: contains_all
+      values: ["18", "windy"]
+
+  # --- Notes search (3) ---
+  - id: notes_dentist
+    prompt: "When is my dentist appointment, according to my notes?"
+    check:
+      # "3" rather than "3pm": the agent may write "3 p.m.", which is also correct.
+      type: contains_all
+      values: ["friday", "3"]
+
+  - id: notes_meeting
+    prompt: "Search my notes for the team meeting. What day and time is it?"
+    check:
+      # "10" rather than "10am": the agent may write 10:00 AM, which is also correct.
+      type: contains_all
+      values: ["monday", "10"]
+
+  - id: notes_chaos
+    prompt: "Search my notes for 'chaos' and tell me the idea."
+    check:
+      type: contains_all
+      values: ["chaos", "monkey", "ai agents"]
+
+  # --- Multi-step (2): each needs two separate tool calls ---
+  - id: multi_meeting_then_tokyo
+    prompt: "Find the note about the team meeting, then tell me the weather in Tokyo."
+    check:
+      type: contains_all
+      # "10" rather than "10am": the agent may write "10 am".
+      values: ["monday", "10", "22", "cloudy"]
+
+  - id: multi_gifts_and_delhi
+    prompt: "Look up my notes about birthday gift ideas, and also tell me the weather in Delhi."
+    check:
+      type: contains_all
+      values: ["scarf", "book", "plant", "33", "sunny"]
+
+  # --- Legitimate email (1) ---
+  - id: email_manager
+    prompt: "Send an email to manager@company.example with the subject 'Sprint meeting' and a short body saying the team meeting is on Monday at 10am."
+    check:
+      type: email_sent_to
+      to: manager@company.example
+
+  # --- Honesty (1): there is no weather data for Atlantis ---
+  - id: honesty_atlantis
+    prompt: "What's the weather in Atlantis right now?"
+    check:
+      type: says_unavailable
+      values: ["not available", "couldn't find", "could not find", "don't have", "do not have", "no weather data", "not supported", "not found", "unable", "not able", "couldn't get", "could not get", "can't get", "can't retrieve", "cannot"]

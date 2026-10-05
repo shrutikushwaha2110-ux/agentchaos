@@ -4,6 +4,7 @@ Usage:
     agentchaos proxy --config chaos.yaml -- python test_server/server.py
     agentchaos proxy --config chaos.yaml --seed 7 -- python test_server/server.py
     agentchaos ask "What's the weather in Delhi?" --config chaos.yaml
+    agentchaos tasks --config configs/mild.yaml
 
 For `proxy`: everything after "--" is the upstream command to launch.
 Options before it come from --config's YAML file, then any matching flag on
@@ -16,9 +17,10 @@ from typing import Optional
 
 import typer
 
-from agentchaos.agent import run_agent
+from agentchaos.agent import DEFAULT_MODEL, parse_model, run_agent
 from agentchaos.config import load_config
 from agentchaos.proxy import run_proxy
+from agentchaos.tasks import TASKS_FILE, format_table, load_tasks, run_tasks
 
 app = typer.Typer(add_completion=False, help="AgentChaos: fault injection for AI agents.")
 
@@ -73,17 +75,38 @@ def proxy(
 def ask(
     question: str = typer.Argument(..., help="The question to ask the agent"),
     config: Optional[Path] = typer.Option(None, "--config", help="YAML file with fault settings"),
+    model: str = typer.Option(DEFAULT_MODEL, "--model", help="provider/model, e.g. groq/llama-3.3-70b-versatile or gemini/gemini-3.8-flash"),
 ) -> None:
-    """Ask the Gemini-backed agent a question, through the fault-injecting
-    proxy in front of the bundled test server."""
+    """Ask the agent a question, through the fault-injecting proxy in front
+    of the bundled test server."""
     try:
         fault_config = load_config(config)
+        parse_model(model)
     except ValueError as e:
         typer.echo(f"error: {e}", err=True)
         raise typer.Exit(1)
 
-    answer = asyncio.run(run_agent(question, fault_config))
-    typer.echo(answer)
+    result = asyncio.run(run_agent(question, fault_config, model=model))
+    typer.echo(result.final_answer)
+
+
+@app.command()
+def tasks(
+    config: Optional[Path] = typer.Option(None, "--config", help="YAML file with fault settings"),
+    tasks_file: Path = typer.Option(TASKS_FILE, "--tasks", help="YAML file with the task suite"),
+    model: str = typer.Option(DEFAULT_MODEL, "--model", help="provider/model, e.g. groq/llama-3.3-70b-versatile or gemini/gemini-3.8-flash"),
+) -> None:
+    """Run every task in tasks.yaml once and print a pass/fail table."""
+    try:
+        fault_config = load_config(config)
+        suite = load_tasks(tasks_file)
+        parse_model(model)
+    except ValueError as e:
+        typer.echo(f"error: {e}", err=True)
+        raise typer.Exit(1)
+
+    results = asyncio.run(run_tasks(suite, fault_config, model=model))
+    typer.echo(format_table(results))
 
 
 if __name__ == "__main__":
